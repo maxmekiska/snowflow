@@ -12,12 +12,17 @@
 export const S = {
     // ---------------------------------------------------------------- quality
     //
-    // These are the `balanced` preset, and they are what a fresh load gets.
+    // These are the `ultra` preset, and they are what a fresh load gets.
     // `applyPreset` is only ever called from the overlay's buttons, so whatever
     // is written here *is* the boot quality — the `preset` string below only
     // decides which button starts lit.
-    preset: "balanced",
-    resolutionScale: 0.85,
+    //
+    // Drop `resolutionScale` and `deformResolution` here if you need a lighter
+    // machine to keep up while working on something; the overlay's `balanced`
+    // button does the same live, except for `deformResolution`, which is read
+    // once at construction and needs a reload either way.
+    preset: "ultra",
+    resolutionScale: 1.0,
 
     // ------------------------------------------------------------------- sun
     sunAzimuth: 118, // degrees, compass bearing of the sun
@@ -88,7 +93,11 @@ export const S = {
     // listener — so this one only ever takes effect at boot. Switching preset in
     // the overlay moves every other quality key live and leaves this one until
     // the page is reloaded.
-    deformResolution: 1024,
+    //
+    // 2048 over the 80 m window is the 3.9 cm texel `terrain/deformation.js`
+    // documents and the README quotes in its VRAM figure. Halving it halves the
+    // resolution of every mark in the snow.
+    deformResolution: 2048,
 
     // ------------------------------------------------------------- snow-surf
     /** Height of the breaking wall thrown by a carve, as a multiple of 1.45 m. */
@@ -148,8 +157,8 @@ export const S = {
 
     // ------------------------------------------------------------------ post
     taa: true,
-    ssr: false,
-    dof: false,
+    ssr: true,
+    dof: true,
     bloom: true,
     grain: true,
     sharpen: true,
@@ -284,22 +293,14 @@ export const SCHEMA = [
     },
 ];
 
-/**
- * Quality presets.
- *
- * Every preset lists every key it owns. `ultra` used to be `{}` — the base
- * values in `S` *were* ultra and the others were diffs against them — and that
- * stops working the moment the defaults are not ultra: an empty `ultra` would
- * restore nothing at all while lighting its own button, so the one preset that
- * asks for the most would be the one that changed the least.
- *
- * `high` and `ultra` are the same set, as they were before this was written out
- * in full. Nothing here has ever distinguished them.
- */
+/** Quality presets. Only the keys that differ from `ultra` need listing. */
 export const PRESETS = {
-    ultra: { deformResolution: 2048, resolutionScale: 1.0, ssr: true, dof: true },
+    ultra: {},
     high: { deformResolution: 2048, resolutionScale: 1.0, ssr: true, dof: true },
-    balanced: { deformResolution: 1024, resolutionScale: 0.85, ssr: false, dof: false },
+    balanced: {
+        deformResolution: 1024, resolutionScale: 0.85,
+        ssr: false, dof: false,
+    },
 };
 
 /** @type {Map<string, Set<(v:any, k:string) => void>>} */
