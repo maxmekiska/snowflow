@@ -328,16 +328,19 @@ export class CloudVortex {
         let count = this._owedCore | 0;
         if (count <= 0) return;
         this._owedCore -= count;
-        // At 120 m/s and 30 fps this is four metres of travel a frame, which is
-        // five grains a side. The cap is loose enough never to bite in flight
-        // and tight enough that a resumed tab cannot dump a hundred at once.
+        // Sized above what the *slowest* frame rate can ask for, not below it.
+        // The controller clamps its step to 1/30, so the longest segment the
+        // sky strike can lay down is 620/30 = 21 m, which wants 24 grains a
+        // side here. This was 20, chosen when the fastest thing through the
+        // deck was a 120 m/s climb and four metres a frame: it bit at 30 fps and
+        // not at 60, which made the emitted count depend on the frame rate. That
+        // is the one property per-metre metering exists to guarantee, so the cap
+        // is a guard against a resumed tab rather than a budget.
         //
-        // The overflow is dropped rather than left owed. That was academic
-        // while the fastest thing through the deck was a 120 m/s climb; the sky
-        // strike crosses it at 620, where a single frame asks for far more than
-        // the cap and the debt would go on tearing vapour out of a tower the
-        // character left several hundred metres ago.
-        if (count > 20) { count = 20; this._owedCore = 0; }
+        // The overflow is dropped rather than left owed, for the same reason.
+        // A banked debt goes on tearing vapour out of a tower the character left
+        // several hundred metres ago.
+        if (count > 26) { count = 26; this._owedCore = 0; }
 
         for (let i = 0; i < count; i++) {
             // Jittered inside its own slot rather than laid on a regular grid:
@@ -405,8 +408,10 @@ export class CloudVortex {
         let count = this._owedTear | 0;
         if (count <= 0) return;
         this._owedTear -= count;
-        // Dropped, not banked — see the note on the cores' cap above.
-        if (count > 24) { count = 24; this._owedTear = 0; }
+        // 36 rather than 24, and dropped rather than banked — see the note on
+        // the cores' cap above. This one meters harder (1.6/m against 1.15), so
+        // a 21 m worst-case frame asks for 33 of it.
+        if (count > 36) { count = 36; this._owedTear = 0; }
 
         for (let i = 0; i < count; i++) {
             const f = (i + Math.random()) / count;

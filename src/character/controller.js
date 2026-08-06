@@ -83,7 +83,7 @@ const FLY_CLEAR = 2.0;
  * The sky tier's ceiling, as an **absolute world height** rather than a
  * clearance. See the header for why this one is not ground-relative.
  *
- * Twenty-five metres over the cloud deck's mean top (`DECK_Y` in
+ * Twenty-five metres over the cloud deck's mean top (`DECK_TOP` in
  * `vfx/cloudDeck.js`, 430 m), which is deliberately close. Sitting a hundred
  * metres clear of the tops turns the deck into scenery on the floor and the
  * mode into the deck tier with a longer lift; skimming it means the taller
@@ -310,7 +310,7 @@ export class CharacterController {
          * `velocity` was horizontal-only until the sky tier existed, because
          * every metre of vertical motion came out of the altitude hold rather
          * than out of the integrator and nothing needed to know about it. The
-         * launch changed that: at 120 m/s the camera spring, the airflow and the
+         * strike changed that: at 620 m/s the camera spring, the airflow and the
          * pose all have to be told, and the honest place for it is the velocity
          * vector the rest of the demo already reads.
          */

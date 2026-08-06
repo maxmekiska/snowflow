@@ -45,10 +45,10 @@ const PIVOT_FREQ = 7.5;
  * A critically damped spring tracking a ramp settles a constant `2v/ω` behind
  * it — 0.27 s of travel at this frequency — and that lag is the whole point of
  * the rig: it is what makes hard acceleration stretch the arm. At the sky
- * launch's 120 m/s it is also thirty-two metres, and the character simply
- * leaves the top of the frame. So the lag is fed forward rather than fought
- * with stiffness, which cancels it in closed form instead of trading it for a
- * rigid arm.
+ * strike's 620 m/s peak it is also a hundred and sixty-five metres, and the
+ * character simply leaves the top of the frame. So the lag is fed forward
+ * rather than fought with stiffness, which cancels it in closed form instead of
+ * trading it for a rigid arm. `FOLLOW_BOOST` below then takes the rest.
  *
  * The deadband is what keeps that from being a regression everywhere else.
  * Cresting a dune at a sprint is already 7 m/s of vertical and an ordinary

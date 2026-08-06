@@ -35,9 +35,9 @@
  * Everything here works in three dimensions — the metering, the axis and the
  * ring it is built on. That was not true while flight was horizontal, and it
  * did not need to be: the character's vertical rate was capped at 9 m/s and the
- * ground distance it travelled was the whole story. The sky launch is 120 m/s
- * straight up, and on the old ground metering it emitted *nothing at all* — a
- * rocket climb with dead still air around it. Metering on the real path length
+ * ground distance it travelled was the whole story. The sky strike goes straight
+ * up at hundreds of metres a second, and on the old ground metering it emitted
+ * *nothing at all* — a rocket climb with dead still air around it. Metering on the real path length
  * fixes that for free and the density stays frame-rate independent, because
  * distance is distance whichever way it points.
  *
