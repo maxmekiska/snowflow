@@ -278,7 +278,13 @@ export class SurfWake {
         // Below a walking pace there is nothing being displaced, and laying
         // samples anyway leaves a knot of overlapping wall wherever the player
         // coasted to a stop.
-        const active = ch.surf > 0.06 && ch.speed > 1.6;
+        //
+        // The height test is for the first moments of a takeoff. The surf blend
+        // takes about a third of a second to fall away, and in that time the
+        // climb is already a couple of metres up — long enough to lay a wave on
+        // snow nobody is touching, because the spine is laid at ground height
+        // whatever the character is doing above it.
+        const active = ch.surf > 0.06 && ch.speed > 1.6 && ch.airborne < 0.5;
 
         if (active) {
             if (!this._active) this._maybeRestart();

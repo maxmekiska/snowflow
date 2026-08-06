@@ -16,6 +16,9 @@ dist/
 .DS_Store
 Thumbs.db
 
+# local claude file
+CLAUDE.md
+
 # the repo is source only — no binaries, no captures
 *.png
 *.jpg

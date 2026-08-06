@@ -48,6 +48,8 @@ import furVert from "./fur.vertex.wgsl?raw";
 import furFrag from "./fur.fragment.wgsl?raw";
 import sprayVert from "./spray.vertex.wgsl?raw";
 import sprayFrag from "./spray.fragment.wgsl?raw";
+import cloudVert from "./cloud.vertex.wgsl?raw";
+import cloudFrag from "./cloud.fragment.wgsl?raw";
 import wakeVert from "./wake.vertex.wgsl?raw";
 import wakeFrag from "./wake.fragment.wgsl?raw";
 import wakeDepthVert from "./wakeDepth.vertex.wgsl?raw";
@@ -57,6 +59,10 @@ import waterFrag from "./water.fragment.wgsl?raw";
 import crystalVert from "./crystal.vertex.wgsl?raw";
 import crystalFrag from "./crystal.fragment.wgsl?raw";
 import crystalDepthVert from "./crystalDepth.vertex.wgsl?raw";
+import magicCircleVert from "./magicCircle.vertex.wgsl?raw";
+import magicCircleFrag from "./magicCircle.fragment.wgsl?raw";
+import arcVert from "./arc.vertex.wgsl?raw";
+import arcFrag from "./arc.fragment.wgsl?raw";
 
 import prepassFrag from "./prepass.fragment.wgsl?raw";
 import terrainPrepassVert from "./terrainPrepass.vertex.wgsl?raw";
@@ -109,6 +115,8 @@ const SHADERS = {
     furPixelShader: furFrag,
     sprayVertexShader: sprayVert,
     sprayPixelShader: sprayFrag,
+    cloudVertexShader: cloudVert,
+    cloudPixelShader: cloudFrag,
     wakeVertexShader: wakeVert,
     wakePixelShader: wakeFrag,
     wakeDepthVertexShader: wakeDepthVert,
@@ -119,6 +127,12 @@ const SHADERS = {
     crystalVertexShader: crystalVert,
     crystalPixelShader: crystalFrag,
     crystalDepthVertexShader: crystalDepthVert,
+
+    magicCircleVertexShader: magicCircleVert,
+    magicCirclePixelShader: magicCircleFrag,
+
+    arcVertexShader: arcVert,
+    arcPixelShader: arcFrag,
 
     // The camera-space depth prepass. One fragment stage shared by everything
     // that has nothing to discard; the wake carries its own because it does.

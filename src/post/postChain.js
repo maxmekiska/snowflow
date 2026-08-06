@@ -124,6 +124,16 @@ export class PostChain {
         /** Eased focal distance, metres. Tracks the spring arm. */
         this.focusDist = 6.2;
 
+        /**
+         * 0..1, how much of the frame the inside of a cloud has taken over.
+         * Written by `main.js` from `CloudDeck.immersion`; see the note in
+         * `tonemap.fragment.wgsl` for why this is a composite uniform rather
+         * than more geometry.
+         */
+        this.cloudVeil = 0;
+        /** Radiance the veil converges on, in scene units. */
+        this.cloudVeilColor = new Color3(1, 1, 1);
+
         this._frame = 0;
         this._historyValid = 0;
         this._k = 0;
@@ -167,7 +177,8 @@ export class PostChain {
             Constants.TEXTURETYPE_HALF_FLOAT);
         this.composite = this._pass("snowTonemap", 1.0,
             ["exposure", "contrast", "mode", "grainAmount", "time", "vignette",
-             "speedStreak", "bloomAmount", "shaftAmount"],
+             "speedStreak", "bloomAmount", "shaftAmount",
+             "veilAmount", "veilColor"],
             ["bloomNear", "bloomFar", "shaftsTex"], Constants.TEXTURETYPE_HALF_FLOAT);
         this.sharpen = this._pass("snowSharpen", 1.0, ["invRes", "amount"], [],
             // The last stage before the swapchain, and the only one working on
@@ -331,6 +342,8 @@ export class PostChain {
             );
             e.setFloat("bloomAmount", S.bloom ? S.bloomStrength : 0);
             e.setFloat("shaftAmount", S.showLightShafts ? 1 : 0);
+            e.setFloat("veilAmount", this.cloudVeil);
+            e.setColor3("veilColor", this.cloudVeilColor);
             e.setTextureFromPostProcessOutput("bloomNear", this.bloomA);
             e.setTextureFromPostProcessOutput("bloomFar", this.bloomC);
             e.setTextureFromPostProcessOutput("shaftsTex", this.shafts);

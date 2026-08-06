@@ -237,8 +237,14 @@ export class SprayField {
                 this.age[i] += h * 2.5;
             }
 
-            // Puffs expand as they disperse; clods do not.
-            const grow = this.kind[i] > 0.5 ? 1.0 : 1.0 + a01 * 1.3;
+            // Puffs expand as they disperse and clods do not. An ember rolls
+            // outward hard as it burns — that expansion is most of what makes a
+            // cluster of them read as one churning mass rather than as a swarm
+            // of separate sprites.
+            const kd = this.kind[i];
+            const grow = kd > 1.5
+                ? 1.0 + a01 * 2.6
+                : (kd > 0.5 ? 1.0 : 1.0 + a01 * 1.3);
             // Fade in fast, out slowly.
             const alpha =
                 Math.min(1, a01 * 8) * (1 - a01) * (1 - a01);

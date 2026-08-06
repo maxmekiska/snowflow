@@ -74,11 +74,18 @@ export class SnowContact {
         this._prevX = ch.position.x;
         this._prevZ = ch.position.z;
 
-        if (ch.surf > 0.02) this._surf(dt, moved);
-        if (ch.surf < 0.98) this._walk(dt, moved);
+        // Nothing to mark once the feet are off the deck. Both continuous
+        // brushes scale everything by distance travelled, so fading the distance
+        // itself fades the mark without touching a single constant below — and
+        // it fades rather than gates, so the last metre of a landing eases the
+        // trail back in instead of switching it on under a character that is
+        // still descending.
+        const contact = moved * (1 - ch.airborne);
+        if (ch.surf > 0.02) this._surf(dt, contact);
+        if (ch.surf < 0.98) this._walk(dt, contact);
 
         // Footfalls fire regardless of mode; the gait suppresses them while
-        // surfing because the feet are on the board.
+        // surfing or flying, because the feet are on a board either way.
         const fig = this.figure;
         for (let i = 0; i < 2; i++) {
             let px, pz;

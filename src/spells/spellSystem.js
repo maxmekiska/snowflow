@@ -1,7 +1,7 @@
 /**
  * The spell system — dispatch, shared context, and the casting pose.
  *
- * Owns the five spells, the water body they draw into, the ice they leave, and
+ * Owns the six spells, the water body they draw into, the ice they leave, and
  * the light pool every material reads. One `update()` per frame, in this order,
  * and the order is load-bearing:
  *
@@ -27,11 +27,14 @@ import { expDamp } from "../core/camera.js";
 import { SpellLights } from "./spellLights.js";
 import { WaterBody } from "./waterBody.js";
 import { CrystalField } from "./crystals.js";
+import { MagicCircle } from "./magicCircle.js";
+import { ArcField } from "./arcs.js";
 import { Sweep } from "./sweep.js";
 import { Ribbon } from "./ribbon.js";
 import { Bloom } from "./bloom.js";
 import { Crystallize } from "./crystallize.js";
 import { Vortex } from "./vortex.js";
+import { Comet } from "./comet.js";
 import { aimPoint, clamp01 } from "./bending.js";
 
 /**
@@ -44,6 +47,8 @@ import { aimPoint, clamp01 } from "./bending.js";
  *   spray: import("../vfx/particles.js").SprayField,
  *   water: WaterBody,
  *   crystals: CrystalField,
+ *   circle: MagicCircle,
+ *   arcs: ArcField,
  *   lights: SpellLights,
  *   time: number,
  *   sprayScale: number,
@@ -69,6 +74,13 @@ export class SpellSystem {
         this.lights = new SpellLights();
         this.water = new WaterBody(scene, sky, shadows, this.lights);
         this.crystals = new CrystalField(scene, sky, shadows, this.lights);
+        // The casting sigil. Owned here rather than by the Comet so that its
+        // pipeline is warmed with everything else — a mesh that first draws on
+        // the frame a spell is cast is a compile in the middle of that frame.
+        this.circle = new MagicCircle(scene, sky);
+        // Lightning. Owned here rather than by the Comet for the same reason the
+        // sigil is: it is a mesh, so it has to be warmed with everything else.
+        this.arcs = new ArcField(scene, sky);
 
         /** @type {SpellContext} */
         this.ctx = {
@@ -80,6 +92,8 @@ export class SpellSystem {
             spray,
             water: this.water,
             crystals: this.crystals,
+            circle: this.circle,
+            arcs: this.arcs,
             lights: this.lights,
             time: 0,
             sprayScale: 1,
@@ -91,8 +105,12 @@ export class SpellSystem {
         this.bloom = new Bloom(this.ctx);
         this.crystallize = new Crystallize(this.ctx);
         this.vortex = new Vortex(this.ctx);
+        this.comet = new Comet(this.ctx);
 
-        this.spells = [this.sweep, this.ribbon, this.bloom, this.crystallize, this.vortex];
+        this.spells = [
+            this.sweep, this.ribbon, this.bloom,
+            this.crystallize, this.vortex, this.comet,
+        ];
 
         /**
          * Materials outside the spell system that shade with the spell lights.
@@ -107,14 +125,42 @@ export class SpellSystem {
          */
         this._consumers = [];
 
+        /**
+         * Systems outside the spell system that *emit* into the light pool,
+         * rather than reading from it.
+         *
+         * The mirror of `_consumers` above, and it exists for the same reason:
+         * the pool is cleared at the top of this `update` and uploaded at the
+         * bottom, so anything wanting a slot has to declare inside that window
+         * — and `vfx/skyBolt.js` runs before this system does, because its
+         * arcs have to be spawned before `arcs.update()` uploads them. It
+         * resolves its light during its own update and hands it over here.
+         *
+         * @type {Array<(lights: SpellLights) => void>}
+         */
+        this._lightSources = [];
+
         /** Aim direction, refreshed each frame from the rig. */
         this.aim = new Vector3(0, 0, 1);
         /** 0..1 eased: how far into a casting stance the figure should be. */
         this.castBlend = 0;
+        /** 0..1 eased: which stance that is — 0 bending throw, 1 channelling. */
+        this.channelBlend = 0;
+        /**
+         * The stance the blend above is heading for, latched.
+         *
+         * Asserted by a spell when it starts and left alone otherwise, rather
+         * than sampled from what is currently active. A spell ending is not a
+         * request for the other stance — it is a request for no stance at all,
+         * which `castBlend` already describes.
+         */
+        this._stance = 0;
         this._lastCast = -99;
         this._time = 0;
         /** Console override for the Ribbon hold. */
         this.debugRibbon = false;
+        /** Console override for the Comet charge. */
+        this.debugComet = false;
     }
 
     /**
@@ -124,6 +170,16 @@ export class SpellSystem {
     addConsumers(...mats) {
         for (let i = 0; i < mats.length; i++) {
             if (mats[i]) this._consumers.push(mats[i]);
+        }
+    }
+
+    /**
+     * Declare a non-spell system that contributes a light each frame.
+     * @param {...(lights: SpellLights) => void} fns
+     */
+    addLightSource(...fns) {
+        for (let i = 0; i < fns.length; i++) {
+            if (fns[i]) this._lightSources.push(fns[i]);
         }
     }
 
@@ -171,13 +227,49 @@ export class SpellSystem {
 
         for (let i = 0; i < this.spells.length; i++) this.spells[i].update(dt);
 
+        // After the spells and before the upload. Deliberately not gated on
+        // `showSpells` — these are not spells, and the sky strike is a movement
+        // mode rather than something the player cast.
+        for (let i = 0; i < this._lightSources.length; i++) {
+            this._lightSources[i](this.lights);
+        }
+
         // The casting stance eases in while anything is up and out again after.
         // Nothing about it is a switch.
+        //
+        // The Comet's wind-up is longer than the stock post-cast window, so it
+        // holds the stance explicitly — otherwise the figure would come out of
+        // the brace before the lance had left the hands.
         const casting =
-            this.ribbon.active || this._time - this._lastCast < 0.55 ? 1 : 0;
+            this.ribbon.active || this.comet.charging
+            || this._time - this._lastCast < 0.55 ? 1 : 0;
+        // Sampled before the blend moves, so a stance asserted on the same frame
+        // a cast begins is in place before the arms have left the walk pose.
+        const posed = this.castBlend >= 0.01;
         this.castBlend = expDamp(this.castBlend, casting, casting ? 7.0 : 3.2, dt);
+
+        // Which stance. The Comet gathers with both hands; every other spell
+        // throws with one.
+        //
+        // The target is latched, and that is the whole of it: when the Comet is
+        // released the stance stays where it is and only `castBlend` goes out,
+        // so the arms leave the gather the same way they entered it. Driving
+        // this from `comet.charging` instead looks right on the way in and wrong
+        // on the way out — the hold sets `_lastCast`, so the cast blend is still
+        // at 1 for 0.55 s after release, and the stance falling away underneath
+        // it swings the arms out through the one-handed throw before they drop.
+        //
+        // Snapped rather than eased while nothing is posed, because there is no
+        // pose to cross *from* — easing from a stance the arms are not in is
+        // what puts a half-and-half shape on them as they come up into the next
+        // spell.
+        this.channelBlend = posed
+            ? expDamp(this.channelBlend, this._stance, 7.0, dt)
+            : this._stance;
+
         const ch = this.ctx.controller;
         ch.cast = this.castBlend;
+        ch.channel = this.channelBlend;
         ch.castAimX = this.aim.x;
         ch.castAimY = this.aim.y;
         ch.castAimZ = this.aim.z;
@@ -190,15 +282,28 @@ export class SpellSystem {
 
         this.water.update(dt, cameraPos);
         this.crystals.update(dt, cameraPos);
+        // Last, and after the spell updates above: a bolt struck this frame has
+        // to be aged and uploaded in the same frame it was struck, or the first
+        // frame of every discharge is a hole.
+        this.arcs.update(dt);
     }
 
     _dispatch() {
-        // Ribbon is a hold, so it is polled rather than edge-triggered.
-        // `debugRibbon` lets the console hold it without synthesising a key
-        // event — the poll would otherwise release it on the very next frame.
+        // Ribbon and Comet are holds, so they are polled rather than
+        // edge-triggered. `debugRibbon`/`debugComet` let the console hold them
+        // without synthesising a key event — the poll would otherwise release
+        // them on the very next frame.
         this.holdRibbon(input.spellHeld2 || this.debugRibbon);
+
         const key = input.spellPressed;
-        if (key && key !== 2) this.cast(key);
+
+        // `spellPressed` is or'd in so that a tap short enough to begin and end
+        // inside one frame still starts a charge; the next frame's release then
+        // throws it at minimum power. Without it the shortest possible press of
+        // `6` would do nothing at all, which reads as a broken key.
+        this.holdComet(input.spellHeld6 || this.debugComet || key === 6);
+
+        if (key && key !== 2 && key !== 6) this.cast(key);
     }
 
     /**
@@ -207,7 +312,7 @@ export class SpellSystem {
      * Separated from the input poll so the console or a future rebind can cast
      * without synthesising a key event. `SNOWFLOW.spells` is the console handle.
      *
-     * @param {number} key 1..5
+     * @param {number} key 1..6
      */
     cast(key) {
         const ctx = this.ctx;
@@ -219,6 +324,9 @@ export class SpellSystem {
         }
 
         this._lastCast = this._time;
+        // The bending stance, claimed here for every one-shot. Key 6 falls
+        // through to `holdComet` below and claims the other one back.
+        this._stance = 0;
 
         if (key === 1) {
             // Flat aim: the crescent runs along the ground, so a camera pointed
@@ -256,6 +364,33 @@ export class SpellSystem {
         if (key === 5) {
             this.vortex.trigger();
             rig.addTrauma(0.10);
+            return;
+        }
+
+        if (key === 6) {
+            // Comet is a hold and is driven from `holdComet`. Reaching here at
+            // all means something called `cast(6)` directly — the console, or a
+            // future rebind — so it starts the charge and leaves the caller to
+            // let go.
+            this.holdComet(true);
+        }
+    }
+
+    /**
+     * Poll the Comet's charge.
+     *
+     * Unlike the Ribbon this is called every frame whether held or not, because
+     * the spell needs the live aim while it charges: the sigil stands facing
+     * wherever the player is looking, and the shot is targeted at release rather
+     * than at the press.
+     *
+     * @param {boolean} held
+     */
+    holdComet(held) {
+        this.comet.hold(held, this.aim.x, this.aim.y, this.aim.z);
+        if (held) {
+            this._lastCast = this._time;
+            this._stance = 1;
         }
     }
 
@@ -265,6 +400,7 @@ export class SpellSystem {
             if (!this.ribbon.held) {
                 this.ribbon.trigger();
                 this._lastCast = this._time;
+                this._stance = 0;
             }
         } else if (this.ribbon.held) {
             this.ribbon.release();
@@ -296,7 +432,8 @@ export class SpellSystem {
     }
 
     get triangles() {
-        return this.water.triangles + this.crystals.triangles;
+        return this.water.triangles + this.crystals.triangles
+            + this.circle.triangles + this.arcs.triangles;
     }
 
     /**
@@ -311,6 +448,8 @@ export class SpellSystem {
     async warmUp(x, y, z) {
         await this.water.warmUp(x, y, z);
         await this.crystals.warmUp(x, y, z);
+        await this.circle.warmUp(x, y, z);
+        await this.arcs.warmUp(x, y, z);
     }
 
     /**
@@ -320,10 +459,14 @@ export class SpellSystem {
     finishWarmUp() {
         this.water.finishWarmUp();
         this.crystals.finishWarmUp();
+        this.circle.finishWarmUp();
+        this.arcs.finishWarmUp();
     }
 
     dispose() {
         this.water.dispose();
         this.crystals.dispose();
+        this.circle.dispose();
+        this.arcs.dispose();
     }
 }

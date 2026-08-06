@@ -25,6 +25,10 @@ import { Character } from "./character/character.js";
 import { SnowContact } from "./character/snowContact.js";
 import { SprayField } from "./vfx/particles.js";
 import { SurfWake } from "./vfx/surfWake.js";
+import { Slipstream } from "./vfx/slipstream.js";
+import { CloudDeck } from "./vfx/cloudDeck.js";
+import { CloudVortex } from "./vfx/cloudVortex.js";
+import { SkyBolt } from "./vfx/skyBolt.js";
 import { SpellSystem } from "./spells/spellSystem.js";
 import { Overlay } from "./ui/overlay.js";
 import { Sky } from "./render/sky.js";
@@ -144,6 +148,20 @@ async function boot() {
     onChange("showWake", (v) => wake.setEnabled(v));
     wake.registerPrepass(depthPass);
 
+    // The air the character drags with them in flight. An emitter into the pool
+    // above and nothing else — no mesh, no material, so nothing to warm up.
+    const stream = new Slipstream(character, figure.figure, spray);
+
+    // The weather the sky tier flies on. Absent until the camera climbs into it,
+    // and it reads the sky for its own lighting rather than the shadow cascades,
+    // which end four hundred metres beneath it.
+    const clouds = new CloudDeck(scene, sky);
+
+    // What the deck does when something goes through it. Another pure emitter,
+    // like the slipstream above — it probes the deck for density and writes into
+    // the same spray pool, so it has no pipeline of its own to warm.
+    const cloudWake = new CloudVortex(character, figure.figure, spray, clouds);
+
     // The five spells, the water body they bend and the ice they leave. Every
     // one of them writes into the same terrain state buffer the feet and the
     // wake do, and lights the snow through the same four-slot pool.
@@ -156,6 +174,17 @@ async function boot() {
         wake.material, spray.material
     );
     spells.registerPrepass(depthPass);
+
+    // The strike that carries the character between the flight tiers. Another
+    // pure emitter — it writes into the spray pool, the deformation buffer and
+    // the spell system's own arc field, and owns no pipeline of its own, so
+    // there is nothing here to warm up. It has to be built after `spells`
+    // because it borrows that arc field.
+    const skyBolt = new SkyBolt(character, figure.figure, terrain, spray, spells.arcs);
+    // Its light cannot be declared from its own update: the pool is cleared and
+    // uploaded inside `spells.update`, and this runs before that so its bolts
+    // are in the field before the field uploads. See `addLightSource`.
+    spells.addLightSource((lights) => skyBolt.declareLight(lights));
 
     // The rig needs ground heights to keep the spring arm above the snow.
     rig.groundAt = (x, z) => terrain.heightAt(x, z);
@@ -178,6 +207,11 @@ async function boot() {
     spray.update(0, rig.camera.position);
     await spray.warmUp();
     await wake.warmUp();
+    // Lays a deck and leaves it standing through the warm-up frames below, for
+    // the same pipeline reason the water body does — `isReady()` compiles the
+    // module, but the render pipeline is keyed on blend and depth state and is
+    // only built when the mesh is actually drawn.
+    await clouds.warmUp(rig.camera.position);
     await spells.warmUp(
         character.position.x + 3, character.position.y, character.position.z + 3
     );
@@ -196,9 +230,10 @@ async function boot() {
         scene.render();
         await loading.nextFrame();
     }
-    // Only now: the spell meshes had to be standing *through* those frames for
-    // their render pipelines to exist. See `WaterBody.warmUp`.
+    // Only now: the spell meshes and the cloud deck had to be standing *through*
+    // those frames for their render pipelines to exist. See `WaterBody.warmUp`.
     spells.finishWarmUp();
+    clouds.finishWarmUp();
 
     // ------------------------------------------------------------- run loop
     let prev = performance.now();
@@ -239,6 +274,15 @@ async function boot() {
         sky.update();
         sky.render(rig, time);
         shadows.update(rig.camera, sky.sunDir);
+        // Before the spells, and it has to be: it strikes into their arc field,
+        // which `spells.update` uploads at the end of its own pass, and a bolt
+        // struck after that upload is a bolt that does not exist until next
+        // frame. It also writes deformation brushes, so it is inside the same
+        // window `spells` is — before `terrain.update` runs the sim pass — and
+        // emits into the spray, so it is before `spray.update` as everything
+        // that emits must be. Its light is the one thing it cannot hand over
+        // here; `spells` pulls that through `addLightSource` above.
+        skyBolt.update(dt);
         // After the shadow refit, so the water and the ice carry this frame's
         // cascade matrices; before the terrain, so the brushes every spell
         // writes are in the staging array when the simulation pass runs.
@@ -252,7 +296,25 @@ async function boot() {
         // Before the spray: the wake decides where its own lip is, and the
         // grains it sheds have to be in the pool before the pool is uploaded.
         wake.update(dt, rig.camera.position);
+        // Same rule, and it also reads the hands — so it has to sit after the
+        // figure has been posed, which `figure.update` did at the top of the
+        // frame.
+        stream.update(dt);
+        // Same rule again — grains before the upload. It reads the deck's puff
+        // positions as they stood at the end of *last* frame, which is the one
+        // ordering constraint it cannot satisfy: `clouds.update` has to run after
+        // the rig, and this has to run before the spray. A frame of staleness
+        // costs three centimetres at the deck's 1.8 m/s drift.
+        cloudWake.update(dt);
         spray.update(dt, rig.camera.position);
+        // After the rig has moved, because the deck is billboarded off this
+        // frame's view matrix and sorted against this frame's eye. It emits into
+        // nothing and nothing reads it back, so it has no other constraint —
+        // except that the veil it measures has to reach the composite before the
+        // composite runs, which is what the next line is.
+        clouds.update(dt, rig.camera.position);
+        post.cloudVeil = clouds.immersion;
+        post.cloudVeilColor.copyFrom(clouds.veilColor);
         const tVfx = performance.now();
 
         scene.render();
@@ -273,7 +335,8 @@ async function boot() {
             (S.showCharacter ? figure.triangles : 0) +
             (wake.mesh.isVisible ? wake.mesh.metadata.triangles : 0) +
             spells.triangles +
-            spray.liveCount * 2;
+            spray.liveCount * 2 +
+            clouds.liveCount * 2;
 
         sample(dtMs);
         checkSpike(dtMs);
@@ -286,9 +349,9 @@ async function boot() {
     setTimeout(() => overlay.resetSpikes(), 800);
 
     globalThis.SNOWFLOW = {
-        engine, scene, rig, character, figure, contact, spray, wake, spells,
-        overlay, terrain, sky, shadows, post, depthPass,
-        S, input, perfStats: stats,
+        engine, scene, rig, character, figure, contact, spray, wake, stream,
+        clouds, cloudWake, skyBolt, spells, overlay, terrain, sky, shadows, post,
+        depthPass, S, input, perfStats: stats,
     };
 }
 

@@ -43,6 +43,10 @@ uniform vignette: f32;
 uniform speedStreak: f32;
 uniform bloomAmount: f32;
 uniform shaftAmount: f32;
+/// 0 = clear air, 1 = buried in the cloud deck. See the note at `main`.
+uniform veilAmount: f32;
+/// Radiance the veil converges on — the deck's own lit colour, in scene units.
+uniform veilColor: vec3f;
 
 // ------------------------------------------------------------------ AgX
 
@@ -172,6 +176,27 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     if (uniforms.shaftAmount > 0.0001) {
         c += textureSampleLevel(shaftsTex, shaftsTexSampler, input.vUV, 0.0).rgb
            * uniforms.shaftAmount;
+    }
+
+    // The inside of a cloud.
+    //
+    // Every puff in the deck fades out over the last fraction of its own radius,
+    // because a view-facing quad whose centre is nearer than its radius clips
+    // against the near plane and draws a hard edge sweeping across the frame.
+    // That leaves the geometry correct and the *experience* missing — punching
+    // through a tower parts it instead of burying you in it. This is where the
+    // missing half is paid back: `CloudDeck.immersion` measures how deep inside
+    // the camera actually is and the deck's own lit radiance fills the frame.
+    //
+    // In scene radiance and before exposure, so it is stated in the same units
+    // the cloud material writes and rolls through the tone curve with everything
+    // else. After the radial smear, which has nothing left to smear once the
+    // frame is one colour, and before bloom, so a veil lit by a low sun blooms —
+    // which is exactly what flying into sunlit cloud does. The spindrift strands
+    // are added later and deliberately survive it: they are the one thing still
+    // legible inside a whiteout, and they are what says you are moving.
+    if (uniforms.veilAmount > 0.001) {
+        c = mix(c, uniforms.veilColor, uniforms.veilAmount);
     }
 
     c *= uniforms.exposure;

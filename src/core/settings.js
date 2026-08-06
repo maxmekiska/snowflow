@@ -11,8 +11,13 @@
 /** @type {Record<string, number|boolean|string>} */
 export const S = {
     // ---------------------------------------------------------------- quality
-    preset: "ultra",
-    resolutionScale: 1.0,
+    //
+    // These are the `balanced` preset, and they are what a fresh load gets.
+    // `applyPreset` is only ever called from the overlay's buttons, so whatever
+    // is written here *is* the boot quality — the `preset` string below only
+    // decides which button starts lit.
+    preset: "balanced",
+    resolutionScale: 0.85,
 
     // ------------------------------------------------------------------- sun
     sunAzimuth: 118, // degrees, compass bearing of the sun
@@ -36,6 +41,29 @@ export const S = {
     // and the fine structure reads as flat ground.
     windDirection: 42,
     windStrength: 1.0,
+    /**
+     * Density of the cloud deck the sky tier flies on. 0 removes it entirely.
+     *
+     * A slider rather than a constant because it is the one thing up there whose
+     * right value depends on the sun: at 13 degrees the deck is lit almost
+     * edge-on and reads far heavier than the same density would under a high
+     * sun, so anyone dragging `sunElevation` needs this to move with it.
+     *
+     * It scales opacity, not coverage — thinning the deck out until you can see
+     * the field through it, rather than opening holes in it. Holes are the hole
+     * mask's job and they are placed, not random.
+     */
+    cloudDeck: 1.0,
+    /**
+     * Density of the vapour the character tears out of the deck in flight.
+     *
+     * Taste rather than physics, and it is the one knob for both populations in
+     * `vfx/cloudVortex.js` — the trailing cores and the entry burst — because
+     * anyone reaching for this wants more or less of *the effect*, not a
+     * different balance between its halves. 0 removes it and leaves the deck
+     * exactly as it draws.
+     */
+    cloudVortex: 1.0,
     /** Far-field mountain range on the skybox. */
     showMountains: true,
     /** Peak height of that range, metres. */
@@ -56,7 +84,11 @@ export const S = {
     deformDepth: 1.0,
     deformBerm: 1.0,
     refillRate: 1.0,
-    deformResolution: 2048,
+    // Read once, in the `DeformationField` constructor, and it has no `onChange`
+    // listener — so this one only ever takes effect at boot. Switching preset in
+    // the overlay moves every other quality key live and leaves this one until
+    // the page is reloaded.
+    deformResolution: 1024,
 
     // ------------------------------------------------------------- snow-surf
     /** Height of the breaking wall thrown by a carve, as a multiple of 1.45 m. */
@@ -66,6 +98,22 @@ export const S = {
     /** Screen-space speed streaks while surfing. */
     windStreaks: true,
     streakStrength: 1.0,
+    /** Density of the airflow the character drags with them in flight. */
+    flyStream: 1.0,
+    /**
+     * Scale on the lightning strike that carries the character between the
+     * flight tiers — the column, the arcs, the sparks and both ground bursts.
+     * 0 leaves the movement exactly as it is and draws none of it.
+     *
+     * Taste, and one knob for the whole effect rather than one per population,
+     * for the same reason `cloudVortex` is one knob: anyone reaching for it
+     * wants more or less of *the strike*, not a different balance between its
+     * parts. It scales counts and not the timing — the transit is 1.5 seconds
+     * whatever this says, because the phase machine in `character/controller.js`
+     * owns that and the pose, the camera and the altitude curve are all built
+     * on it.
+     */
+    skyBolt: 1.0,
 
     // ---------------------------------------------------------------- spells
     /** Master toggle. Off cancels everything in flight and hides both meshes. */
@@ -75,6 +123,23 @@ export const S = {
     /** Density of the spray every spell throws. */
     spellSpray: 1.0,
     /**
+     * Which detonation the Comet uses. All three are live, and this picks
+     * between them at the moment of impact — so it can be switched between
+     * casts to compare them.
+     *
+     * `dome`   implosion, a held beat of nothing, a flash, then a hemisphere
+     *          that *becomes* the rolling wall rather than being replaced by
+     *          it: both are drawn at the same radius, so the shell's equator
+     *          and the wall's centre line are the same circle at every instant.
+     * `disc`   the same wind-up, but a flat planar front — the seismic-charge
+     *          shape. Legible only off-plane; see `DISC_TILT` in `comet.js`.
+     * `pillar` the original mushroom column and fireball.
+     *
+     * Under `dome` and `disc` the front's radius *is* the shock clock, so the
+     * thing you watch crossing the field is the thing that hits you.
+     */
+    cometBlast: "dome", // "dome" | "disc" | "pillar"
+    /**
      * Artistic scale on the water's absorption path — glacial melt at one end,
      * tap water at the other. The right value depends on the sun elevation, so
      * it is a slider rather than a constant.
@@ -83,8 +148,8 @@ export const S = {
 
     // ------------------------------------------------------------------ post
     taa: true,
-    ssr: true,
-    dof: true,
+    ssr: false,
+    dof: false,
     bloom: true,
     grain: true,
     sharpen: true,
@@ -135,6 +200,8 @@ export const SCHEMA = [
             { k: "aerialStrength", l: "Aerial persp.", t: "f", min: 0, max: 2, step: 0.01 },
             { k: "windDirection", l: "Wind dir", t: "f", min: 0, max: 360, step: 1 },
             { k: "windStrength", l: "Wind strength", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "cloudDeck", l: "Cloud deck", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "cloudVortex", l: "Cloud vortex", t: "f", min: 0, max: 2.5, step: 0.01 },
             { k: "showMountains", l: "Far range", t: "b" },
             { k: "mountainHeight", l: "Range height", t: "f", min: 0, max: 2500, step: 10 },
             { k: "showLightShafts", l: "Light shafts", t: "b" },
@@ -168,6 +235,8 @@ export const SCHEMA = [
             { k: "wakeSpray", l: "Plume density", t: "f", min: 0, max: 2.5, step: 0.01 },
             { k: "windStreaks", l: "Speed streaks", t: "b" },
             { k: "streakStrength", l: "Streak amt", t: "f", min: 0, max: 2, step: 0.01 },
+            { k: "flyStream", l: "Flight airflow", t: "f", min: 0, max: 2.5, step: 0.01 },
+            { k: "skyBolt", l: "Sky strike", t: "f", min: 0, max: 2.5, step: 0.01 },
             { k: "showWake", l: "Wake mesh", t: "b" },
         ],
     },
@@ -177,6 +246,7 @@ export const SCHEMA = [
             { k: "showSpells", l: "Spells", t: "b" },
             { k: "spellLight", l: "Spell light", t: "f", min: 0, max: 3, step: 0.01 },
             { k: "spellSpray", l: "Spell spray", t: "f", min: 0, max: 2.5, step: 0.01 },
+            { k: "cometBlast", l: "Comet blast", t: "e", opts: ["dome", "disc", "pillar"] },
             { k: "waterDepthTint", l: "Water depth", t: "f", min: 0, max: 3, step: 0.01 },
         ],
     },
@@ -214,14 +284,22 @@ export const SCHEMA = [
     },
 ];
 
-/** Quality presets. Only the keys that differ from `ultra` need listing. */
+/**
+ * Quality presets.
+ *
+ * Every preset lists every key it owns. `ultra` used to be `{}` — the base
+ * values in `S` *were* ultra and the others were diffs against them — and that
+ * stops working the moment the defaults are not ultra: an empty `ultra` would
+ * restore nothing at all while lighting its own button, so the one preset that
+ * asks for the most would be the one that changed the least.
+ *
+ * `high` and `ultra` are the same set, as they were before this was written out
+ * in full. Nothing here has ever distinguished them.
+ */
 export const PRESETS = {
-    ultra: {},
+    ultra: { deformResolution: 2048, resolutionScale: 1.0, ssr: true, dof: true },
     high: { deformResolution: 2048, resolutionScale: 1.0, ssr: true, dof: true },
-    balanced: {
-        deformResolution: 1024, resolutionScale: 0.85,
-        ssr: false, dof: false,
-    },
+    balanced: { deformResolution: 1024, resolutionScale: 0.85, ssr: false, dof: false },
 };
 
 /** @type {Map<string, Set<(v:any, k:string) => void>>} */

@@ -413,7 +413,8 @@ export class Overlay {
             this._txt(
                 r.chrMot,
                 c.speed.toFixed(2) + " m/s  " + wrapDeg(c.facing * RAD).toFixed(0) + "°" +
-                (c.surf > 0.01 ? "  surf " + c.surf.toFixed(2) : "")
+                (c.surf > 0.01 ? "  surf " + c.surf.toFixed(2) : "") +
+                (c.altitude > 0.01 ? "  fly " + c.altitude.toFixed(1) + " m" : "")
             );
         } else {
             this._txt(r.chrPos, "—");
@@ -435,6 +436,16 @@ export class Overlay {
                 "s.character.position.set(" +
                 fmt2(c.position.x) + "," + fmt2(c.position.y) + "," + fmt2(c.position.z) +
                 ");s.character.facing=" + c.facing.toFixed(3) + ";";
+            // The altitude hold rewrites `position.y` every frame from the tier
+            // and the eased clearance, so a snippet that only restores the
+            // position reproduces a framing at four hundred metres for exactly
+            // one frame and then plays the descent. The altitude goes in
+            // directly rather than being left to ease up to the tier's target,
+            // so the pose is there on the frame it is pasted.
+            s +=
+                "s.character.flying=" + c.flying +
+                ";s.character.inSky=" + c.inSky +
+                ";s.character.altitude=" + fmt2(c.altitude) + ";";
         }
         s +=
             "s.rig.yaw=" + rig.yaw.toFixed(3) +

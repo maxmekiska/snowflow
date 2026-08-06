@@ -31,6 +31,53 @@ const PITCH_MAX = 1.05; // looking down
 const DIST_MIN = 2.6;
 const DIST_MAX = 11.0;
 
+/**
+ * Natural frequency of the pivot spring, rad/s-ish. Named rather than inline
+ * because the vertical feed-forward below has to be derived from the same
+ * number — the two are one mechanism and drifting them apart silently
+ * un-corrects the correction.
+ */
+const PIVOT_FREQ = 7.5;
+
+/**
+ * Vertical rate below which the arm is left to lag, m/s.
+ *
+ * A critically damped spring tracking a ramp settles a constant `2v/ω` behind
+ * it — 0.27 s of travel at this frequency — and that lag is the whole point of
+ * the rig: it is what makes hard acceleration stretch the arm. At the sky
+ * launch's 120 m/s it is also thirty-two metres, and the character simply
+ * leaves the top of the frame. So the lag is fed forward rather than fought
+ * with stiffness, which cancels it in closed form instead of trading it for a
+ * rigid arm.
+ *
+ * The deadband is what keeps that from being a regression everywhere else.
+ * Cresting a dune at a sprint is already 7 m/s of vertical and an ordinary
+ * takeoff is capped at 9, and leading either of them would bob the camera on
+ * every rise the player runs over. Twelve sits above both, so nothing outside
+ * the sky transit is touched at all, and the ~3 m of residual lag it leaves at
+ * full climb reads as the character riding high in frame — which, on a launch,
+ * is the correct thing for it to read as.
+ */
+const VERT_LEAD_DEADBAND = 12;
+
+/**
+ * How much stiffer the pivot spring gets at `followBoost` = 1, as a multiple.
+ *
+ * The feed-forward above cancels a *steady* ramp's lag exactly, and the sky
+ * strike is not steady: it builds to 620 m/s in 170 ms and sheds it again in
+ * 330. At the stock frequency the lag it is cancelling is 165 m, so the two
+ * large numbers have to agree to within a percent through a transient lasting
+ * about as long as the spring's own response — and they do not. Stiffening by
+ * four cuts the lag being cancelled to 41 m and the spring's response to 33 ms,
+ * which is short enough that the ramp looks steady to it.
+ *
+ * Note the *same* frequency feeds the spring and the lead, which is the whole
+ * point of `PIVOT_FREQ` being a named constant: boosting one without the other
+ * silently un-corrects the correction, and the failure mode is a camera that
+ * overshoots by exactly as much as it used to lag.
+ */
+const FOLLOW_BOOST = 4;
+
 export class CameraRig {
     /**
      * @param {import("@babylonjs/core/scene").Scene} scene
@@ -92,6 +139,13 @@ export class CameraRig {
         /** Eased lift currently being applied to stay above the surface. */
         this.groundLift = 0;
 
+        /**
+         * 0..1: how far the rig is stiffened against something moving faster
+         * than the stock spring can follow. Written by the character controller
+         * from the sky strike, zero for everything else. See `FOLLOW_BOOST`.
+         */
+        this.followBoost = 0;
+
         this._first = true;
     }
 
@@ -103,7 +157,7 @@ export class CameraRig {
     /**
      * @param {number} dt seconds
      * @param {Vector3} targetPos character world position (feet)
-     * @param {Vector3} targetVel character world velocity
+     * @param {Vector3} targetVel character world velocity, `y` included
      * @param {number} lean signed lean amount, -1..1, for banking
      * @param {number} speed01 normalised speed for FOV widening
      */
@@ -131,12 +185,24 @@ export class CameraRig {
         _pivot.x += targetVel.x * lead * 0.09;
         _pivot.z += targetVel.z * lead * 0.09;
 
+        // One frequency, used twice — for the spring below and for the lag it
+        // is about to feed forward. They are one mechanism, so the boost has to
+        // reach both or it makes things worse rather than better.
+        const freq = PIVOT_FREQ * (1 + FOLLOW_BOOST * this.followBoost);
+
+        // Vertical feed-forward for the sky transit — see `VERT_LEAD_DEADBAND`.
+        // Only the part of the rate above the deadband is led, so the correction
+        // is zero for every metre the character travels on the deck.
+        const vy = targetVel.y;
+        const fast = Math.sign(vy) * Math.max(0, Math.abs(vy) - VERT_LEAD_DEADBAND);
+        _pivot.y += fast * (2 / freq);
+
         if (this._first) {
             this.pivot.copyFrom(_pivot);
             this._first = false;
         } else {
             // Softer spring under acceleration = the arm stretches, then recovers.
-            springDamp(this.pivot, this.pivotVel, _pivot, 7.5, 1.0, dt);
+            springDamp(this.pivot, this.pivotVel, _pivot, freq, 1.0, dt);
         }
 
         // -------------------------------------------------------------- fov
