@@ -79,10 +79,53 @@
         font-size: clamp(28px, 4.4vw, 54px);
         font-weight: 200;
         letter-spacing: 0.62em;
-        text-indent: 0.62em; /* optical re-centre against the trailing track */
+        /*
+         * Optical re-centre against the trailing track. Letter-spacing puts a
+         * gap after the *last* glyph too, so a centred line sits visibly left
+         * of centre; an equal indent on the leading edge puts it back.
+         *
+         * It has to match whatever now ends the line, and that is no longer the
+         * wordmark's own 0.62em: the exponent below ends it, at its own much
+         * tighter tracking. 0.24em of a 0.34em glyph is 0.082em here.
+         */
+        text-indent: 0.082em;
         color: var(--frost);
         opacity: 0;
         animation: rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) 120ms forwards;
+    }
+
+    /*
+     * The exponent. A real `sup`, because that is what it is.
+     *
+     * Two inherited properties have to be overridden or it falls apart. The
+     * tracking is the obvious one: 0.62em at this size throws "sky" nearly as
+     * wide as the word it sits on, so it reads as a second word rather than as
+     * a power. The weight is the quiet one: 200 is fine for 54px caps and turns
+     * to vapour at 18px, so it goes up rather than down.
+     *
+     * `vertical-align` is a length rather than `super`, which raises by about a
+     * third of an em and leaves the exponent sitting halfway up the caps. 1.15em
+     * of the sup's own size is 0.39em of the wordmark's, which puts its top just
+     * under the cap height.
+     */
+    .wordmark sup {
+        font-size: 0.34em;
+        font-weight: 300;
+        letter-spacing: 0.24em;
+        vertical-align: 1.15em;
+        /* Closes about half the wordmark's trailing track, so the exponent sits
+           against the word instead of a full letter-space away from it. */
+        margin-left: -0.9em;
+        color: var(--accent);
+        opacity: 0;
+        animation: lift 1100ms cubic-bezier(0.16, 1, 0.3, 1) 700ms forwards;
+    }
+
+    /* Rises further than the wordmark does, and last, so it reads as being
+       lifted into place rather than fading up alongside everything else. */
+    @keyframes lift {
+        from { opacity: 0; transform: translate3d(0, 0.7em, 0); }
+        to   { opacity: 1; transform: none; }
     }
 
     .tagline {
@@ -179,7 +222,7 @@
 
     <div id="boot">
         <div class="boot-inner">
-            <div class="wordmark">SNOWFLOW</div>
+            <div class="wordmark">SNOWFLOW<sup>sky</sup></div>
             <div class="tagline">a study in snow</div>
             <div class="bar"><div class="bar-fill" id="boot-bar"></div></div>
             <div class="phase" id="boot-phase">initialising</div>
